@@ -75,7 +75,8 @@ def create_scenario():
     
     # Set parameters
     start_year = 2024.5
-    annual_decrease_rate = 0.055
+    annual_decrease_rate = {'CO2 FFI': 0.055,'CO2 AFOLU': 0.055} 
+    gross_emi_target = {'CO2 FFI': 5.,'CO2 AFOLU': 0.} 
     cdr_years = f_accc.emissions.timepoints.loc[start_year:2101]  # Use consistent timepoints from f_accc
     nyears = len(cdr_years)  # Number of years for ACCC scenario
     
@@ -92,7 +93,10 @@ def create_scenario():
     # Insert annual reductions into FFI and AFOLU emissions for each specie
     for specie in emi_2024.keys():
         # Calculate the emissions decrease over the years as an array
-        emi_gross_values = emi_2024[specie] * (1 - annual_decrease_rate) ** np.arange(nyears)
+        initial_emission = emi_2024[specie]
+
+        # Formula for asymptotic approach to the target_min
+        emi_gross_values = gross_emi_target[specie] + (initial_emission - gross_emi_target[specie]) * np.exp(-annual_decrease_rate[specie] * np.arange(nyears))
         
         # Store the emissions in emi_gross_accc for the corresponding specie
         emi_gross_accc.loc[dict(specie=specie)] = emi_gross_values[:]
