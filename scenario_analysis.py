@@ -10,8 +10,11 @@ import matplotlib.pyplot as pl
 import fair_tools
 import accc
 from pathlib import Path
+import pandas as pd
+import xarray as xr
 
-figpath = Path('figures')
+fig_path = Path('figures')
+output_data_path = Path('output')
 
 opacity=0.5 # alpha parameter for the plots
 
@@ -67,7 +70,7 @@ ax[1].set_xlim([2024,2100])
 ax[1].set_ylim([1,2])
 
 fig.tight_layout()
-fig.savefig(figpath / 'CO2_and_surface_temperature.png', dpi=150, bbox_inches='tight')
+fig.savefig(fig_path / 'CO2_and_surface_temperature.png', dpi=150, bbox_inches='tight')
 
 
 # %%  Figure on annual emissions and sinks
@@ -89,7 +92,7 @@ ax2.set_ylabel('Gt CO$_2$ yr$^-1$')
 ax2.set_xlabel('')
 ax2.set_title('Emissions and sinks')
 ax2.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
-fig2.savefig(figpath / 'emissions_and_sinks.png', dpi=150, bbox_inches='tight')
+fig2.savefig(fig_path / 'emissions_and_sinks.png', dpi=150, bbox_inches='tight')
 
 # %%  Figure on cumulative emissions and sinks
 fig3, ax3= pl.subplots(1,1)
@@ -110,7 +113,7 @@ ax3.set_ylabel('Gt CO$_2$')
 ax3.set_xlabel('')
 ax3.set_title('Cumulative emissions and sinks')
 ax3.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
-fig3.savefig(figpath / 'emissions_and_sinks_cumulative.png', dpi=150, bbox_inches='tight')
+fig3.savefig(fig_path / 'emissions_and_sinks_cumulative.png', dpi=150, bbox_inches='tight')
 
 # %%  Figure on annual emissions and sinks aggregated
 fig4, ax4= pl.subplots(1,1)
@@ -131,8 +134,74 @@ ax4.set_ylabel('Gt CO$_2$ yr$^-1$')
 ax4.set_xlabel('')
 ax4.set_title('Emissions and sinks')
 ax4.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
-fig4.savefig(figpath / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inches='tight')
+fig4.savefig(fig_path / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inches='tight')
 
+# %%  Save data into Excel files
+
+# Calculate annual means
+# sat_accc=
+
+
+
+# Assuming `temp_data` is your DataArray from the previous operation
+sat_accc_data = f_accc.temperature.sel(layer=0, scenario=scenario).loc[dict(timebounds=slice(2024, 2101))]
+
+# Calculate the mean of neighboring time points
+sat_annual_mean = (sat_accc_data[:-1,:].values + sat_accc_data[1:,:].values) / 2
+
+# Assign new timebounds to the result
+sat_accc = xr.DataArray(sat_annual_mean, coords={'year': np.arange(2024,2101), 'config':sat_accc_data.config}, dims=['year', 'config'])
+    
+
+# Assuming `temp_data` is your DataArray from the previous operation
+co2_accc_data = f_accc.concentration.sel(specie='CO2', scenario=scenario).loc[dict(timebounds=slice(2024, 2101))]
+
+# Calculate the mean of neighboring time points
+co2_annual_mean = (co2_accc_data[:-1,:].values + co2_accc_data[1:,:].values) / 2
+
+# Assign new timebounds to the result
+co2_accc = xr.DataArray(co2_annual_mean, coords={'year': np.arange(2024,2101), 'config':co2_accc_data.config}, dims=['year', 'config'])
+
+
+# Process data into Pandas Dataframe
+output_data=pd.DataFrame(index=np.arange(2024,2101))
+# Name the index as 'year'
+output_data.index.name = 'year'
+
+for specie, data in emissions_accc.items():
+    # Select the relevant slice
+    if 'timepoints' in data.coords:
+        sliced_data = data.loc[dict(timepoints=slice(2024, 2101))]
+        
+        # If the data has a 'config' dimension, select the first config (index 0)
+        if 'config' in sliced_data.dims:
+            sliced_data = sliced_data.sel(config=1234)
+        
+        # Add the result to the DataFrame
+        output_data[specie] = sliced_data.values
+    
+output_data['sat mean']=sat_accc.mean(dim='config')
+output_data['sat 95%_CI_low']=sat_accc.quantile(0.025, dim='config')
+output_data['sat 95%_CI_high']=sat_accc.quantile(0.975, dim='config')
+
+output_data['CO2 mean']=co2_accc.mean(dim='config')
+output_data['CO2 95%_CI_low']=co2_accc.quantile(0.025, dim='config')
+output_data['CO2 95%_CI_high']=co2_accc.quantile(0.975, dim='config')
+
+excel_filename = output_data_path / 'accc_roadmap.xlsx'
+
+# Create an Excel writer using the context manager
+with pd.ExcelWriter(excel_filename) as writer:
+    for specie in emissions_accc.keys():
+        output_data[specie].to_excel(writer, sheet_name='Emissions and sinks', index=True)
+
+    output_data['sat mean'].to_excel(writer, sheet_name='Temperature', index=True)
+    output_data['sat 95%_CI_low'].to_excel(writer, sheet_name='Temperature', index=True)
+    output_data['sat 95%_CI_high'].to_excel(writer, sheet_name='Temperature', index=True)
+      
+    output_data['CO2 mean'].to_excel(writer, sheet_name='CO2 concentration', index=True)
+    output_data['CO2 95%_CI_low'].to_excel(writer, sheet_name='CO2 concentration', index=True)
+    output_data['CO2 95%_CI_high'].to_excel(writer, sheet_name='CO2 concentration', index=True)
 
 
 
