@@ -192,16 +192,16 @@ excel_filename = output_data_path / 'accc_roadmap.xlsx'
 
 # Create an Excel writer using the context manager
 with pd.ExcelWriter(excel_filename) as writer:
-    for specie in emissions_accc.keys():
-        output_data[specie].to_excel(writer, sheet_name='Emissions and sinks', index=True)
+    
+    output_data[emissions_accc.keys()].to_excel(writer, sheet_name='Emissions and sinks', index=True)
 
-    output_data['sat mean'].to_excel(writer, sheet_name='Temperature', index=True)
-    output_data['sat 95%_CI_low'].to_excel(writer, sheet_name='Temperature', index=True)
-    output_data['sat 95%_CI_high'].to_excel(writer, sheet_name='Temperature', index=True)
-      
-    output_data['CO2 mean'].to_excel(writer, sheet_name='CO2 concentration', index=True)
-    output_data['CO2 95%_CI_low'].to_excel(writer, sheet_name='CO2 concentration', index=True)
-    output_data['CO2 95%_CI_high'].to_excel(writer, sheet_name='CO2 concentration', index=True)
+    # Save temperature-related data in a single sheet
+    temperature_data = output_data[['sat mean', 'sat 95%_CI_low', 'sat 95%_CI_high']]
+    temperature_data.to_excel(writer, sheet_name='Temperature', index=True)
+
+    # Save CO2 concentration-related data in a single sheet
+    co2_data = output_data[['CO2 mean', 'CO2 95%_CI_low', 'CO2 95%_CI_high']]
+    co2_data.to_excel(writer, sheet_name='CO2 concentration', index=True)
 
 
 
