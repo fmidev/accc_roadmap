@@ -18,23 +18,29 @@ output_data_path = Path('output')
 
 opacity=0.5 # alpha parameter for the plots
 
-# Create SSP runs for reference
-f_ssps=fair_tools.createConstrainedRuns(year_end=2101, scenarios=['ssp119','ssp126'])
+include_ssps=True
 
+if include_ssps:
+    # Create SSP runs for reference
+    f_ssps=fair_tools.createConstrainedRuns(year_end=2101, scenarios=['ssp119','ssp126'])
+    f_ssps.run()
+
+    #Rebase temperatures to be relative to 1850-1900
+    f_ssps=fair_tools.rebase_temperature(f_ssps)
+
+    # Calculate natural sinks
+    natural_sinks_annual_ssps, natural_sinks_cumulative_ssps=fair_tools.calculate_natural_sinks(f_ssps)
 
 # Create ACCC scenario
 f_accc, emissions_accc=accc.create_scenario()
 
 # Run FaiR
-f_ssps.run()
 f_accc.run()
 
 #Rebase temperatures to be relative to 1850-1900
-f_ssps=fair_tools.rebase_temperature(f_ssps)
 f_accc=fair_tools.rebase_temperature(f_accc)
 
 # Calculate natural sinks
-natural_sinks_annual_ssps, natural_sinks_cumulative_ssps=fair_tools.calculate_natural_sinks(f_ssps)
 natural_sinks_annual_accc, natural_sinks_cumulative_accc=fair_tools.calculate_natural_sinks(f_accc)
 
 #Calculate 95% quantiles for natural sinks
@@ -44,11 +50,14 @@ natural_sinks_annual_accc_95ci_low=natural_sinks_annual_accc.quantile(0.025, dim
 natural_sinks_cumulative_accc_95ci_high=natural_sinks_cumulative_accc.quantile(0.975, dim='config').sel(scenario='accc')
 natural_sinks_cumulative_accc_95ci_low=natural_sinks_cumulative_accc.quantile(0.025, dim='config').sel(scenario='accc')
 
+
+
 # %%  Figure on sat and CO2
 fig, ax= pl.subplots(1,2)
 ax=ax.flatten()
-for scenario in f_ssps.scenarios:
-    f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
+if include_ssps:
+    for scenario in f_ssps.scenarios:
+        f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
 for scenario in f_accc.scenarios:
     f_accc.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
 ax[0].legend()
@@ -58,9 +67,9 @@ ax[0].set_xlim([2020,2100])
 ax[0].set_ylim([350,475])
 ax[0].set_yticks(np.arange(350, 476, 25))
 
-
-for scenario in f_ssps.scenarios:
-    f_ssps.temperature.sel(layer=0, scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[1], label=scenario)
+if include_ssps:
+    for scenario in f_ssps.scenarios:
+        f_ssps.temperature.sel(layer=0, scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[1], label=scenario)
 for scenario in f_accc.scenarios:
     f_accc.temperature.sel(layer=0, scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[1], label=scenario)
 ax[1].legend()
@@ -119,9 +128,6 @@ fig3.savefig(fig_path / 'emissions_and_sinks_cumulative.png', dpi=150, bbox_inch
 fig4, ax4= pl.subplots(1,1)
 
 (emissions_accc['CO2 FFI gross']+emissions_accc['CO2 AFOLU gross']).plot(ax=ax4,label='Gross CO$_2$ emissions')
-
-
-
 (emissions_accc['CDR land-based']+emissions_accc['CDR novel']).plot(ax=ax4,label='CDR')
 
 f_accc.emissions.sel(specie='CO2',config=1234).plot(ax=ax4, label='Net CO$_2$ emissions')
@@ -137,11 +143,6 @@ ax4.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
 fig4.savefig(fig_path / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inches='tight')
 
 # %%  Save data into Excel files
-
-# Calculate annual means
-# sat_accc=
-
-
 
 # Assuming `temp_data` is your DataArray from the previous operation
 sat_accc_data = f_accc.temperature.sel(layer=0, scenario=scenario).loc[dict(timebounds=slice(2024, 2101))]
@@ -204,8 +205,7 @@ with pd.ExcelWriter(excel_filename) as writer:
     co2_data.to_excel(writer, sheet_name='CO2 concentration', index=True)
 
 
-
-
-
+# Print important scenario metrics
+print('CO2 concentration in 2100 = ', output_data['CO2 mean'].loc[2100].round(2))
 
 

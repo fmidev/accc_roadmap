@@ -8,49 +8,58 @@ Created on Wed Nov 20 09:35:40 2024
 import numpy as np
 import fair_tools
 import xarray as xr
+from scipy.optimize import minimize_scalar
 
-def logistic_growth(cdr_initial, relative_peak_rate, growth_rate, cdr_inflection_year, cumulative_cdr_target):
+def logistic_growth(cdr_initial, cdr_inflection_year, cumulative_cdr_target):
     """
-    Logistic growth function adjusted to meet a cumulative CDR target, with relative rates.
-
+    Logistic CDR curve with enforced initial value and realistic smooth shape.
+    Optimizes peak rate L to meet cumulative CDR target.
+    
     Parameters:
     cdr_initial : float
-        Initial annual CDR rate (Gt CO₂/year, negative for sinks).
-    relative_peak_rate : float
-        Relative rate multiplier at the inflection point (e.g., 10 means 10x `cdr_initial`).
-    growth_rate : float
-        Growth rate, controls the steepness of the curve.
+        Initial annual CDR (GtCO₂/year), positive for removals.
     cdr_inflection_year : float
-        Year where growth is fastest (inflection point).
+        Inflection year (midpoint of S-curve).
     cumulative_cdr_target : float
-        Total cumulative CDR by the end year (Gt CO₂, negative for sinks).
+        Cumulative target CDR by 2100 (GtCO₂), positive.
 
     Returns:
     xr.DataArray
-        Annual CDR rates adjusted to meet the cumulative target.
+        Annual CDR values over time.
     """
-    cdr_start_year = 2024.5
-    cdr_end_year = 2100.5
-    years = np.arange(cdr_start_year, cdr_end_year + 1)
+    # Time axis
+    t_start = 2024.5
+    t_end = 2100.5
+    years = np.arange(t_start, t_end + 1)
+    dt = years[1] - years[0]
+    t0 = cdr_inflection_year
 
-    # Define max rate as a multiple of the initial rate
-    cdr_peak_rate = relative_peak_rate * cdr_initial
+    def make_logistic(L):
+        # Compute k so that f(t_start) = cdr_initial
+        denom = L / cdr_initial - 1
+        if denom <= 0:
+            return np.full_like(years, np.nan)
+        k = -np.log(denom) / (t_start - t0)
+        f = L / (1 + np.exp(-k * (years - t0)))
+        return f
 
-    # Logistic growth equation
-    logistic = cdr_peak_rate / (1 + (cdr_peak_rate - cdr_initial) / cdr_initial * np.exp(-growth_rate * (years - cdr_inflection_year)))
+    def objective(L):
+        curve = make_logistic(L)
+        if np.any(np.isnan(curve)):
+            return 1e20  # invalid curve
+        cumulative = np.sum(curve) * dt
+        return (cumulative - cumulative_cdr_target) ** 2
 
-    # Adjust to meet cumulative target
-    cumulative_cdr = np.cumsum(logistic) * (years[1] - years[0])  # Integration over years
-    scale_factor = cumulative_cdr_target / cumulative_cdr[-1]  # Scaling factor
-    logistic_scaled = logistic * scale_factor  # Scale the curve
+    # Bounds for L (peak value); should be much higher than cdr_initial
+    result = minimize_scalar(objective, bounds=(cdr_initial * 2, 20), method='bounded')
 
-    # Convert to xarray DataArray
-    logistic_scaled = xr.DataArray(
-        logistic_scaled,
-        coords=[years],
-        dims=["timepoints"]
-    )
-    return logistic_scaled
+    if not result.success:
+        raise RuntimeError('Peak rate optimization failed.')
+
+    best_L = result.x
+    final_curve = make_logistic(best_L)
+
+    return xr.DataArray(final_curve, coords=[years], dims=['timepoints'])
 
 
 
@@ -75,8 +84,8 @@ def create_scenario():
     
     # Set parameters
     start_year = 2024.5
-    annual_decrease_rate = {'CO2 FFI': 0.055,'CO2 AFOLU': 0.055} 
-    gross_emi_target = {'CO2 FFI': 5.,'CO2 AFOLU': 0.} 
+    annual_decrease_rate = {'CO2 FFI': 0.09,'CO2 AFOLU': 0.055} 
+    gross_emi_target = {'CO2 FFI': 1.5,'CO2 AFOLU': 1.} 
     cdr_years = f_accc.emissions.timepoints.loc[start_year:2101]  # Use consistent timepoints from f_accc
     nyears = len(cdr_years)  # Number of years for ACCC scenario
     
@@ -160,20 +169,24 @@ def create_scenario():
     
     
 
-    # Parameters
-    cdr_initial = -1.35e-3  # Initial annual CDR rate (Gt CO₂/year, negative for sinks)
-    relative_peak_rate = 15.0  # Peak rate is 15x the initial rate
-    growth_rate = 0.15         # Logistic growth rate
-    cdr_inflection_year = 2030.5  # Year where growth is fastest
-    cumulative_cdr_target = -600  # Total cumulative CDR by 2100 (Gt CO₂, negative for sinks)
+    # Parameters for novel CDR
+    cdr_initial = 0.00135
+    cdr_inflection_year = 2050.5
+    cumulative_cdr_target = 600
 
     # Generate S-curve
-    cdr_other_values = logistic_growth(cdr_initial, relative_peak_rate, growth_rate, cdr_inflection_year, cumulative_cdr_target)
+    cdr_novel_values = -logistic_growth(
+       cdr_initial,
+       cdr_inflection_year,
+       cumulative_cdr_target
+    )
+
+
     
-    emissions_accc['CDR novel']=cdr_other_values
+    emissions_accc['CDR novel']=cdr_novel_values
     
     # Add the CDR values to existing CO2 FFI emissions in f_accc
-    f_accc.emissions.loc[dict(specie='CO2 FFI', timepoints=slice(2024, 2101))] += cdr_other_values
+    f_accc.emissions.loc[dict(specie='CO2 FFI', timepoints=slice(2024, 2101))] += cdr_novel_values
     
     emissions_accc['CO2 net']=f_accc.emissions.loc[dict(specie='CO2 FFI')]+f_accc.emissions.loc[dict(specie='CO2 AFOLU')]
 
