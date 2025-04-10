@@ -16,7 +16,10 @@ import xarray as xr
 fig_path = Path('figures')
 output_data_path = Path('output')
 
-opacity=0.5 # alpha parameter for the plots
+
+alpha_95=0.5 # Opacity/alpha for the 95% interval
+alpha_66=0.7 # Opacity/alpha for the 66% interval
+
 
 include_ssps=True
 
@@ -44,22 +47,39 @@ f_accc=fair_tools.rebase_temperature(f_accc)
 natural_sinks_annual_accc, natural_sinks_cumulative_accc=fair_tools.calculate_natural_sinks(f_accc)
 
 #Calculate 95% quantiles for natural sinks
+natural_sinks_annual_accc_mean=natural_sinks_annual_accc.mean(dim='config').sel(scenario='accc')
 natural_sinks_annual_accc_95ci_high=natural_sinks_annual_accc.quantile(0.975, dim='config').sel(scenario='accc')
 natural_sinks_annual_accc_95ci_low=natural_sinks_annual_accc.quantile(0.025, dim='config').sel(scenario='accc')
 
+natural_sinks_cumulative_accc_mean=natural_sinks_cumulative_accc.mean(dim='config').sel(scenario='accc')
 natural_sinks_cumulative_accc_95ci_high=natural_sinks_cumulative_accc.quantile(0.975, dim='config').sel(scenario='accc')
 natural_sinks_cumulative_accc_95ci_low=natural_sinks_cumulative_accc.quantile(0.025, dim='config').sel(scenario='accc')
 
+
+# Calculate 95% quantiles for surface temperature and CO2
+sat_accc_mean=f_accc.temperature.sel(layer=0, scenario='accc').mean(dim='config')
+sat_accc_95ci_high=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.975, dim='config')
+sat_accc_66ci_high=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.83, dim='config')
+sat_accc_95ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.025, dim='config')
+sat_accc_66ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.17, dim='config')
+
+co2_accc_mean=f_accc.concentration.sel(specie='CO2' scenario='accc').mean(dim='config')
+co2_accc_95ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.975, dim='config')
+co2_accc_66ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.83, dim='config')
+co2_accc_95ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.025, dim='config')
+co2_accc_66ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.17, dim='config')
 
 
 # %%  Figure on sat and CO2
 fig, ax= pl.subplots(1,2)
 ax=ax.flatten()
-if include_ssps:
-    for scenario in f_ssps.scenarios:
-        f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
-for scenario in f_accc.scenarios:
-    f_accc.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
+# if include_ssps:
+#     for scenario in f_ssps.scenarios:
+#         f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
+
+co2_accc_mean.plot(ax=ax[0], label='ACCC')
+# ax[0].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95)
+
 ax[0].legend()
 ax[0].set_title('CO$_2$ concentration')
 ax[0].set_ylabel('ppm')
@@ -93,7 +113,7 @@ emissions_accc['CDR land-based'].plot(ax=ax2,label='Land-based CDR')
 emissions_accc['CDR novel'].plot(ax=ax2,label='Novel CDR')
 f_accc.emissions.sel(specie='CO2',config=1234).plot(ax=ax2, label='Net CO$_2$ emissions')
 natural_sinks_annual_accc.mean(dim='config').plot(ax=ax2, label='Natural sinks')
-ax2.fill_between(natural_sinks_annual_accc_95ci_low.timebounds, natural_sinks_annual_accc_95ci_low, natural_sinks_annual_accc_95ci_high, alpha=opacity)
+ax2.fill_between(natural_sinks_annual_accc_95ci_low.timebounds, natural_sinks_annual_accc_95ci_low, natural_sinks_annual_accc_95ci_high, alpha=alpha_95)
 
 ax2.set_xlim([2024,2100])
 ax2.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
@@ -114,7 +134,7 @@ emissions_accc['CDR land-based'].cumsum().plot(ax=ax3,label='Land-based CDR')
 emissions_accc['CDR novel'].cumsum().plot(ax=ax3,label='Novel CDR')
 f_accc.emissions.sel(specie='CO2',config=1234, timepoints=slice(2024,2102)).cumsum().plot(ax=ax3, label='Net CO$_2$ emissions')
 natural_sinks_cumulative_accc.sel(timebounds=slice(2024,2102)).mean(dim='config').plot(ax=ax3, label='Natural sinks')
-ax3.fill_between(natural_sinks_cumulative_accc_95ci_low.timebounds, natural_sinks_cumulative_accc_95ci_low, natural_sinks_cumulative_accc_95ci_high, alpha=opacity)
+ax3.fill_between(natural_sinks_cumulative_accc_95ci_low.timebounds, natural_sinks_cumulative_accc_95ci_low, natural_sinks_cumulative_accc_95ci_high, alpha=alpha_95)
 
 ax3.set_xlim([2024,2100])
 ax3.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
@@ -132,7 +152,7 @@ fig4, ax4= pl.subplots(1,1)
 
 f_accc.emissions.sel(specie='CO2',config=1234).plot(ax=ax4, label='Net CO$_2$ emissions')
 natural_sinks_annual_accc.mean(dim='config').plot(ax=ax4, label='Natural sinks')
-ax4.fill_between(natural_sinks_annual_accc_95ci_low.timebounds, natural_sinks_annual_accc_95ci_low, natural_sinks_annual_accc_95ci_high, alpha=opacity, color='red')
+ax4.fill_between(natural_sinks_annual_accc_95ci_low.timebounds, natural_sinks_annual_accc_95ci_low, natural_sinks_annual_accc_95ci_high, alpha=alpha_95, color='red')
 
 ax4.set_xlim([2024,2100])
 ax4.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2)
