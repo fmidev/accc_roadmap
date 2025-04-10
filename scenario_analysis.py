@@ -17,8 +17,8 @@ fig_path = Path('figures')
 output_data_path = Path('output')
 
 
-alpha_95=0.5 # Opacity/alpha for the 95% interval
-alpha_66=0.7 # Opacity/alpha for the 66% interval
+alpha_95=0.2 # Opacity/alpha for the 95% interval
+alpha_66=0.35 # Opacity/alpha for the 66% interval
 
 
 include_ssps=True
@@ -63,7 +63,7 @@ sat_accc_66ci_high=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.8
 sat_accc_95ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.025, dim='config')
 sat_accc_66ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.17, dim='config')
 
-co2_accc_mean=f_accc.concentration.sel(specie='CO2' scenario='accc').mean(dim='config')
+co2_accc_mean=f_accc.concentration.sel(specie='CO2', scenario='accc').mean(dim='config')
 co2_accc_95ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.975, dim='config')
 co2_accc_66ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.83, dim='config')
 co2_accc_95ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.025, dim='config')
@@ -73,12 +73,13 @@ co2_accc_66ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quanti
 # %%  Figure on sat and CO2
 fig, ax= pl.subplots(1,2)
 ax=ax.flatten()
-# if include_ssps:
-#     for scenario in f_ssps.scenarios:
-#         f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
+if include_ssps:
+    for scenario in f_ssps.scenarios:
+        f_ssps.concentration.sel(specie='CO2', scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[0], label=scenario)
 
 co2_accc_mean.plot(ax=ax[0], label='ACCC')
-# ax[0].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95)
+ax[0].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95)
+ax[0].fill_between(co2_accc_mean.timebounds,co2_accc_66ci_low,co2_accc_66ci_high, alpha=alpha_66)
 
 ax[0].legend()
 ax[0].set_title('CO$_2$ concentration')
@@ -90,13 +91,15 @@ ax[0].set_yticks(np.arange(350, 476, 25))
 if include_ssps:
     for scenario in f_ssps.scenarios:
         f_ssps.temperature.sel(layer=0, scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[1], label=scenario)
-for scenario in f_accc.scenarios:
-    f_accc.temperature.sel(layer=0, scenario=scenario).mean(dim='config').plot(x='timebounds', ax=ax[1], label=scenario)
+sat_accc_mean.plot(ax=ax[1], label='ACCC')
+ax[1].fill_between(sat_accc_mean.timebounds,sat_accc_95ci_low,sat_accc_95ci_high, alpha=alpha_95)
+ax[1].fill_between(sat_accc_mean.timebounds,sat_accc_66ci_low,sat_accc_66ci_high, alpha=alpha_66)
+
 ax[1].legend()
 ax[1].set_title('Surface temperature\nrelative to 1850-1900')
 ax[1].set_ylabel('°C')
-ax[1].set_xlim([2024,2100])
-ax[1].set_ylim([1,2])
+ax[1].set_xlim([2020,2100])
+ax[1].set_ylim([1,3])
 
 fig.tight_layout()
 fig.savefig(fig_path / 'CO2_and_surface_temperature.png', dpi=150, bbox_inches='tight')
@@ -162,10 +165,63 @@ ax4.set_title('Emissions and sinks')
 ax4.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
 fig4.savefig(fig_path / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inches='tight')
 
+
+
+# %%  Figure on annual emissions and sinks with stacked plots and natural sinks as a line
+fig5, ax5 = pl.subplots(1, 1)
+
+# Time axis
+years = emissions_accc['CO2 FFI gross'].timepoints
+
+# Adjust natural sinks from timebounds to timepoints for plotting as line
+natural_raw = natural_sinks_annual_accc_mean.copy()
+natural_raw['timebounds'] = natural_raw['timebounds'] + 0.5
+natural = natural_raw.rename({'timebounds': 'timepoints'}).sel(timepoints=years)
+
+# --- Stackplot: positive values (emissions) ---
+ax5.stackplot(
+    years,
+    emissions_accc['CO2 FFI gross'],
+    emissions_accc['CO2 AFOLU gross'],
+    labels=['Gross FFI CO$_2$', 'Gross AFOLU CO$_2$'],
+    colors=['dimgrey', 'indianred']
+)
+
+# --- Stackplot: negative values (removals) ---
+ax5.stackplot(
+    years,
+    emissions_accc['CDR land-based'],
+    emissions_accc['CDR novel'],
+    labels=['Land-based CDR', 'Novel CDR'],
+    colors=['peru', 'cornflowerblue']
+)
+
+# --- Natural sinks as a line ---
+ax5.plot(years, natural, label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+
+# --- Net CO₂ emissions line ---
+f_accc.emissions.sel(specie='CO2', config=1234).sel(timepoints=years).plot(
+    ax=ax5, label='Net CO$_2$ emissions', color='black', linewidth=1.5
+)
+
+# --- Formatting ---
+ax5.axhline(0, color='gray', linestyle='--', linewidth=1)
+ax5.set_xlim([2024.5, 2100])
+ax5.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2)
+ax5.set_ylabel('Gt CO$_2$ yr$^{-1}$')
+ax5.set_xlabel('')
+ax5.set_title('Emissions and sinks')
+ax5.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
+
+# --- Save figure ---
+fig5.savefig(fig_path / 'emissions_and_sinks_stacked.png', dpi=150, bbox_inches='tight')
+
+
+
 # %%  Save data into Excel files
 
 # Assuming `temp_data` is your DataArray from the previous operation
-sat_accc_data = f_accc.temperature.sel(layer=0, scenario=scenario).loc[dict(timebounds=slice(2024, 2101))]
+sat_accc_data = f_accc.temperature.sel(layer=0, scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
 
 # Calculate the mean of neighboring time points
 sat_annual_mean = (sat_accc_data[:-1,:].values + sat_accc_data[1:,:].values) / 2
@@ -175,7 +231,7 @@ sat_accc = xr.DataArray(sat_annual_mean, coords={'year': np.arange(2024,2101), '
     
 
 # Assuming `temp_data` is your DataArray from the previous operation
-co2_accc_data = f_accc.concentration.sel(specie='CO2', scenario=scenario).loc[dict(timebounds=slice(2024, 2101))]
+co2_accc_data = f_accc.concentration.sel(specie='CO2', scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
 
 # Calculate the mean of neighboring time points
 co2_annual_mean = (co2_accc_data[:-1,:].values + co2_accc_data[1:,:].values) / 2

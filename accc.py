@@ -189,5 +189,7 @@ def create_scenario():
     f_accc.emissions.loc[dict(specie='CO2 FFI', timepoints=slice(2024, 2101))] += cdr_novel_values
     
     emissions_accc['CO2 net']=f_accc.emissions.loc[dict(specie='CO2 FFI')]+f_accc.emissions.loc[dict(specie='CO2 AFOLU')]
+    # Select only scenario timeoints for emissions_accc
+    emissions_accc['CO2 net']=emissions_accc['CO2 net'].sel(timepoints=slice(2024,2101))
 
     return f_accc, emissions_accc
