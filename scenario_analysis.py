@@ -58,12 +58,14 @@ natural_sinks_cumulative_accc_95ci_low=natural_sinks_cumulative_accc.quantile(0.
 
 # Calculate 95% quantiles for surface temperature and CO2
 sat_accc_mean=f_accc.temperature.sel(layer=0, scenario='accc').mean(dim='config')
+sat_accc_median=f_accc.temperature.sel(layer=0, scenario='accc').median(dim='config')
 sat_accc_95ci_high=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.975, dim='config')
 sat_accc_66ci_high=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.83, dim='config')
 sat_accc_95ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.025, dim='config')
 sat_accc_66ci_low=f_accc.temperature.sel(layer=0, scenario='accc').quantile(0.17, dim='config')
 
 co2_accc_mean=f_accc.concentration.sel(specie='CO2', scenario='accc').mean(dim='config')
+co2_accc_median=f_accc.concentration.sel(specie='CO2', scenario='accc').median(dim='config')
 co2_accc_95ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.975, dim='config')
 co2_accc_66ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.83, dim='config')
 co2_accc_95ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.025, dim='config')
@@ -168,19 +170,12 @@ fig4.savefig(fig_path / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inc
 
 
 # %%  Figure on annual emissions and sinks with stacked plots and natural sinks as a line
-fig5, ax5 = pl.subplots(1, 1)
+fig5, ax5 = pl.subplots(1, 3, figsize=(15,5), constrained_layout=True)
 
-# Time axis
-years = emissions_accc['CO2 FFI gross'].timepoints
-
-# Adjust natural sinks from timebounds to timepoints for plotting as line
-natural_raw = natural_sinks_annual_accc_mean.copy()
-natural_raw['timebounds'] = natural_raw['timebounds'] + 0.5
-natural = natural_raw.rename({'timebounds': 'timepoints'}).sel(timepoints=years)
 
 # --- Stackplot: positive values (emissions) ---
-ax5.stackplot(
-    years,
+ax5[0].stackplot(
+    emissions_accc['CO2 FFI gross'].timepoints,
     emissions_accc['CO2 FFI gross'],
     emissions_accc['CO2 AFOLU gross'],
     labels=['Gross FFI CO$_2$', 'Gross AFOLU CO$_2$'],
@@ -188,8 +183,8 @@ ax5.stackplot(
 )
 
 # --- Stackplot: negative values (removals) ---
-ax5.stackplot(
-    years,
+ax5[0].stackplot(
+    emissions_accc['CO2 FFI gross'].timepoints,
     emissions_accc['CDR land-based'],
     emissions_accc['CDR novel'],
     labels=['Land-based CDR', 'Novel CDR'],
@@ -197,24 +192,54 @@ ax5.stackplot(
 )
 
 # --- Natural sinks as a line ---
-ax5.plot(years, natural, label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+natural_sinks_annual_accc_mean.plot(ax=ax5[0], label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
 
 # --- Net CO₂ emissions line ---
-f_accc.emissions.sel(specie='CO2', config=1234).sel(timepoints=years).plot(
-    ax=ax5, label='Net CO$_2$ emissions', color='black', linewidth=1.5
+f_accc.emissions.sel(specie='CO2', config=1234).plot(
+    ax=ax5[0], label='Net CO$_2$ emissions', color='black', linewidth=2
 )
 
 # --- Formatting ---
-ax5.axhline(0, color='gray', linestyle='--', linewidth=1)
-ax5.set_xlim([2024.5, 2100])
-ax5.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2)
-ax5.set_ylabel('Gt CO$_2$ yr$^{-1}$')
-ax5.set_xlabel('')
-ax5.set_title('Emissions and sinks')
-ax5.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.7)
+ax5[0].axhline(0, color='gray', linestyle='--', linewidth=1)
+ax5[0].set_xlim([2024.5, 2100])
+ax5[0].legend(loc='upper right', ncol=1)
+ax5[0].set_ylabel('Gt CO$_2$ yr$^{-1}$')
+
+ax5[0].set_title('Emissions and sinks')
+ax5[0].set_title('a)', loc='left')
+
+co2_accc_median.plot(ax=ax5[1], label='Median', color='cornflowerblue', linewidth=2)
+ax5[1].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
+ax5[1].fill_between(co2_accc_mean.timebounds,co2_accc_66ci_low,co2_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
+
+ax5[1].legend(loc='upper right')
+ax5[1].set_title('CO$_2$ concentration')
+ax5[1].set_title('b)', loc='left')
+ax5[1].set_ylabel('ppm')
+ax5[1].set_xlim([2020,2100])
+ax5[1].set_ylim([350,450])
+ax5[1].set_yticks(np.arange(350, 451, 25))
+
+
+sat_accc_median.plot(ax=ax5[2], label='Median', color='cornflowerblue', linewidth=2)
+ax5[2].fill_between(sat_accc_mean.timebounds,sat_accc_95ci_low,sat_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
+ax5[2].fill_between(sat_accc_mean.timebounds,sat_accc_66ci_low,sat_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
+
+ax5[2].legend(loc='upper right')
+ax5[2].set_title('Surface air temperature\nincrease from 1850-1900')
+ax5[2].set_title('c)', loc='left')
+ax5[2].set_ylabel('°C')
+ax5[2].set_xlim([2020,2100])
+ax5[2].set_ylim([0.75, 2.5])
+ax5[2].set_yticks(np.arange(0.75, 2.26, 0.25))
+
+
+for ax in ax5:
+    ax.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.4)
+    ax.set_xlabel('')
 
 # --- Save figure ---
-fig5.savefig(fig_path / 'emissions_and_sinks_stacked.png', dpi=150, bbox_inches='tight')
+fig5.savefig(fig_path / 'accc_scenario.png', dpi=150, bbox_inches='tight')
 
 
 
@@ -239,6 +264,12 @@ co2_annual_mean = (co2_accc_data[:-1,:].values + co2_accc_data[1:,:].values) / 2
 # Assign new timebounds to the result
 co2_accc = xr.DataArray(co2_annual_mean, coords={'year': np.arange(2024,2101), 'config':co2_accc_data.config}, dims=['year', 'config'])
 
+# Process natural sinks
+natural_sinks_annual_data_mean=(natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2024, 2100))].values
+                                +natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2025, 2101))].values) / 2
+# Assign new timebounds to the result
+natural_sinks_annual_year=xr.DataArray(natural_sinks_annual_data_mean, coords={'year': np.arange(2024,2101)}, dims=['year'])
+natural_sinks_annual_year.name='Natural sinks'
 
 # Process data into Pandas Dataframe
 output_data=pd.DataFrame(index=np.arange(2024,2101))
@@ -257,11 +288,13 @@ for specie, data in emissions_accc.items():
         # Add the result to the DataFrame
         output_data[specie] = sliced_data.values
     
-output_data['sat mean']=sat_accc.mean(dim='config')
+output_data['Natural sinks'] = natural_sinks_annual_year.to_pandas()
+
+output_data['sat median']=sat_accc.median(dim='config')
 output_data['sat 95%_CI_low']=sat_accc.quantile(0.025, dim='config')
 output_data['sat 95%_CI_high']=sat_accc.quantile(0.975, dim='config')
 
-output_data['CO2 mean']=co2_accc.mean(dim='config')
+output_data['CO2 median']=co2_accc.median(dim='config')
 output_data['CO2 95%_CI_low']=co2_accc.quantile(0.025, dim='config')
 output_data['CO2 95%_CI_high']=co2_accc.quantile(0.975, dim='config')
 
@@ -269,19 +302,20 @@ excel_filename = output_data_path / 'accc_roadmap.xlsx'
 
 # Create an Excel writer using the context manager
 with pd.ExcelWriter(excel_filename) as writer:
-    
-    output_data[emissions_accc.keys()].to_excel(writer, sheet_name='Emissions and sinks', index=True)
+
+    cols = list(emissions_accc.keys()) + ['Natural sinks']
+    output_data[cols].to_excel(writer, sheet_name='Emissions and sinks', index=True)
 
     # Save temperature-related data in a single sheet
-    temperature_data = output_data[['sat mean', 'sat 95%_CI_low', 'sat 95%_CI_high']]
+    temperature_data = output_data[['sat median', 'sat 95%_CI_low', 'sat 95%_CI_high']]
     temperature_data.to_excel(writer, sheet_name='Temperature', index=True)
 
     # Save CO2 concentration-related data in a single sheet
-    co2_data = output_data[['CO2 mean', 'CO2 95%_CI_low', 'CO2 95%_CI_high']]
+    co2_data = output_data[['CO2 median', 'CO2 95%_CI_low', 'CO2 95%_CI_high']]
     co2_data.to_excel(writer, sheet_name='CO2 concentration', index=True)
 
 
 # Print important scenario metrics
-print('CO2 concentration in 2100 = ', output_data['CO2 mean'].loc[2100].round(2))
+print('Median CO2 concentration in 2100 = ', output_data['CO2 median'].loc[2100].round(2))
 
 
