@@ -25,7 +25,7 @@ include_ssps=True
 
 if include_ssps:
     # Create SSP runs for reference
-    f_ssps=fair_tools.createConstrainedRuns(year_end=2101, scenarios=['ssp119','ssp126'])
+    f_ssps=fair_tools.createConstrainedRuns(year_end=2101, scenarios=['ssp119','ssp126','ssp245'])
     f_ssps.run()
 
     #Rebase temperatures to be relative to 1850-1900
@@ -45,6 +45,11 @@ f_accc=fair_tools.rebase_temperature(f_accc)
 
 # Calculate natural sinks
 natural_sinks_annual_accc, natural_sinks_cumulative_accc=fair_tools.calculate_natural_sinks(f_accc)
+
+
+# Read an alternative development of natural sinks and anthropogenic emissions and sinks
+accc_file=Path('input/accc_roadmap 350 ppm.xlsx')
+emissions_accc_alt=pd.read_excel(accc_file,sheet_name='Emissions and sinks (rev)', index_col=0)
 
 #Calculate 95% quantiles for natural sinks
 natural_sinks_annual_accc_mean=natural_sinks_annual_accc.mean(dim='config').sel(scenario='accc')
@@ -241,6 +246,84 @@ for ax in ax5:
 # --- Save figure ---
 fig5.savefig(fig_path / 'accc_scenario.png', dpi=150, bbox_inches='tight')
 
+# %%  Figure on annual emissions and sinks with stacked plots and natural sinks as a line
+# This version's natural sinks are prescribed and are not based on FaIR simulations is in other figures
+fig6, ax6 = pl.subplots(1, 3, figsize=(15,5), constrained_layout=True)
+
+
+# --- Stackplot: positive values (emissions) ---
+ax6[0].stackplot(
+    emissions_accc['CO2 FFI gross'].timepoints,
+    emissions_accc['CO2 FFI gross'],
+    emissions_accc['CO2 AFOLU gross'],
+    labels=['Gross FFI CO$_2$', 'Gross AFOLU CO$_2$'],
+    colors=['dimgrey', 'indianred']
+)
+
+# --- Stackplot: negative values (removals) ---
+ax6[0].stackplot(
+    emissions_accc['CO2 FFI gross'].timepoints,
+    emissions_accc['CDR land-based'],
+    emissions_accc['CDR novel'],
+    labels=['Land-based CDR', 'Novel CDR'],
+    colors=['peru', 'cornflowerblue']
+)
+
+# --- Natural sinks as a line ---
+natural_sinks_annual_accc_mean.plot(ax=ax6[0], label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+
+# --- Net CO₂ emissions line ---
+f_accc.emissions.sel(specie='CO2', config=1234).plot(
+    ax=ax6[0], label='Net CO$_2$ emissions', color='black', linewidth=2
+)
+
+# --- Formatting ---
+ax6[0].axhline(0, color='gray', linestyle='--', linewidth=1)
+ax6[0].set_xlim([2024.5, 2100])
+ax6[0].legend(loc='upper right', ncol=1)
+ax6[0].set_ylabel('Gt CO$_2$ yr$^{-1}$')
+
+ax6[0].set_title('Emissions and sinks')
+ax6[0].set_title('a)', loc='left')
+
+co2_accc_median.plot(ax=ax6[1], label='Median', color='cornflowerblue', linewidth=2)
+ax6[1].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
+ax6[1].fill_between(co2_accc_mean.timebounds,co2_accc_66ci_low,co2_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
+
+ax6[1].legend(loc='upper right')
+ax6[1].set_title('CO$_2$ concentration')
+ax6[1].set_title('b)', loc='left')
+ax6[1].set_ylabel('ppm')
+ax6[1].set_xlim([2020,2100])
+ax6[1].set_ylim([350,450])
+ax6[1].set_yticks(np.arange(350, 451, 25))
+
+
+sat_accc_median.plot(ax=ax6[2], label='Median', color='cornflowerblue', linewidth=2)
+ax6[2].fill_between(sat_accc_mean.timebounds,sat_accc_95ci_low,sat_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
+ax6[2].fill_between(sat_accc_mean.timebounds,sat_accc_66ci_low,sat_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
+
+ax6[2].legend(loc='upper right')
+ax6[2].set_title('Surface air temperature\nincrease from 1850-1900')
+ax6[2].set_title('c)', loc='left')
+ax6[2].set_ylabel('°C')
+ax6[2].set_xlim([2020,2100])
+ax6[2].set_ylim([0.75, 2.5])
+ax6[2].set_yticks(np.arange(0.75, 2.26, 0.25))
+
+
+for ax in ax6:
+    ax.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.4)
+    ax.set_xlabel('')
+
+# --- Save figure ---
+fig6.savefig(fig_path / 'accc_scenario_prescribed_natural_sinks.png', dpi=150, bbox_inches='tight')
+
+# %%  Figure natural sinks in the SSPs
+fig7, ax7 = pl.subplots(1, 1, figsize=(5,5), constrained_layout=True)
+for ssp in natural_sinks_annual_ssps.scenario.values:
+    natural_sinks_annual_ssps.sel(scenario=ssp).mean(dim='config').plot(ax=ax7,label=ssp)
+ax7.legend()
 
 
 # %%  Save data into Excel files
