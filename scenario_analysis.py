@@ -5,6 +5,7 @@ Created on Sun Aug 28 13:01:06 2022
 
 @author: Antti-Ilari Partanen (antti-ilari.partanen@fmi.fi)
 """
+# %%  Imports and settings
 import numpy as np
 import matplotlib.pyplot as pl
 import fair_tools
@@ -20,8 +21,8 @@ output_data_path = Path('output')
 alpha_95=0.2 # Opacity/alpha for the 95% interval
 alpha_66=0.35 # Opacity/alpha for the 66% interval
 
-
-include_ssps=True
+# %%  SSP scenarios
+include_ssps=False
 
 if include_ssps:
     # Create SSP runs for reference
@@ -33,6 +34,7 @@ if include_ssps:
 
     # Calculate natural sinks
     natural_sinks_annual_ssps, natural_sinks_cumulative_ssps=fair_tools.calculate_natural_sinks(f_ssps)
+
 
 # Create ACCC scenario
 f_accc, emissions_accc=accc.create_scenario()
@@ -75,6 +77,81 @@ co2_accc_95ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quant
 co2_accc_66ci_high=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.83, dim='config')
 co2_accc_95ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.025, dim='config')
 co2_accc_66ci_low=f_accc.concentration.sel(specie='CO2', scenario='accc').quantile(0.17, dim='config')
+
+# %%  Save data into Excel files
+
+# Assuming `temp_data` is your DataArray from the previous operation
+sat_accc_data = f_accc.temperature.sel(layer=0, scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
+
+# Calculate the mean of neighboring time points
+sat_annual_mean = (sat_accc_data[:-1,:].values + sat_accc_data[1:,:].values) / 2
+
+# Assign new timebounds to the result
+sat_accc = xr.DataArray(sat_annual_mean, coords={'year': np.arange(2024,2101), 'config':sat_accc_data.config}, dims=['year', 'config'])
+    
+
+# Assuming `temp_data` is your DataArray from the previous operation
+co2_accc_data = f_accc.concentration.sel(specie='CO2', scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
+
+# Calculate the mean of neighboring time points
+co2_annual_mean = (co2_accc_data[:-1,:].values + co2_accc_data[1:,:].values) / 2
+
+# Assign new timebounds to the result
+co2_accc = xr.DataArray(co2_annual_mean, coords={'year': np.arange(2024,2101), 'config':co2_accc_data.config}, dims=['year', 'config'])
+
+# Process natural sinks
+natural_sinks_annual_data_mean=(natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2024, 2100))].values
+                                +natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2025, 2101))].values) / 2
+# Assign new timebounds to the result
+natural_sinks_annual_year=xr.DataArray(natural_sinks_annual_data_mean, coords={'year': np.arange(2024,2101)}, dims=['year'])
+natural_sinks_annual_year.name='Natural sinks'
+
+# Process data into Pandas Dataframe
+output_data=pd.DataFrame(index=np.arange(2024,2101))
+# Name the index as 'year'
+output_data.index.name = 'year'
+
+for specie, data in emissions_accc.items():
+    # Select the relevant slice
+    if 'timepoints' in data.coords:
+        sliced_data = data.loc[dict(timepoints=slice(2024, 2101))]
+        
+        # If the data has a 'config' dimension, select the first config (index 0)
+        if 'config' in sliced_data.dims:
+            sliced_data = sliced_data.sel(config=1234)
+        
+        # Add the result to the DataFrame
+        output_data[specie] = sliced_data.values
+    
+output_data['Natural sinks'] = natural_sinks_annual_year.to_pandas()
+
+output_data['sat median']=sat_accc.median(dim='config')
+output_data['sat 95%_CI_low']=sat_accc.quantile(0.025, dim='config')
+output_data['sat 95%_CI_high']=sat_accc.quantile(0.975, dim='config')
+
+output_data['CO2 median']=co2_accc.median(dim='config')
+output_data['CO2 95%_CI_low']=co2_accc.quantile(0.025, dim='config')
+output_data['CO2 95%_CI_high']=co2_accc.quantile(0.975, dim='config')
+
+excel_filename = output_data_path / 'accc_roadmap.xlsx'
+
+# Create an Excel writer using the context manager
+with pd.ExcelWriter(excel_filename) as writer:
+
+    cols = list(emissions_accc.keys()) + ['Natural sinks']
+    output_data[cols].to_excel(writer, sheet_name='Emissions and sinks', index=True)
+
+    # Save temperature-related data in a single sheet
+    temperature_data = output_data[['sat median', 'sat 95%_CI_low', 'sat 95%_CI_high']]
+    temperature_data.to_excel(writer, sheet_name='Temperature', index=True)
+
+    # Save CO2 concentration-related data in a single sheet
+    co2_data = output_data[['CO2 median', 'CO2 95%_CI_low', 'CO2 95%_CI_high']]
+    co2_data.to_excel(writer, sheet_name='CO2 concentration', index=True)
+
+
+# Print important scenario metrics
+print('Median CO2 concentration in 2100 = ', output_data['CO2 median'].loc[2100].round(2))
 
 
 # %%  Figure on sat and CO2
@@ -174,30 +251,63 @@ fig4.savefig(fig_path / 'aggregatged_emissions_and_sinks.png', dpi=150, bbox_inc
 
 
 
-# %%  Figure on annual emissions and sinks with stacked plots and natural sinks as a line
+# %%  Figure on annual emissions and sinks, CO2 and temperature
+plot_type_natural_sinks='area' # Choose between 'area' and 'line'
+
 fig5, ax5 = pl.subplots(1, 3, figsize=(15,5), constrained_layout=True)
 
+if plot_type_natural_sinks=='line':
 
-# --- Stackplot: positive values (emissions) ---
-ax5[0].stackplot(
-    emissions_accc['CO2 FFI gross'].timepoints,
-    emissions_accc['CO2 FFI gross'],
-    emissions_accc['CO2 AFOLU gross'],
-    labels=['Gross FFI CO$_2$', 'Gross AFOLU CO$_2$'],
-    colors=['dimgrey', 'indianred']
-)
-
-# --- Stackplot: negative values (removals) ---
-ax5[0].stackplot(
-    emissions_accc['CO2 FFI gross'].timepoints,
-    emissions_accc['CDR land-based'],
-    emissions_accc['CDR novel'],
-    labels=['Land-based CDR', 'Novel CDR'],
-    colors=['peru', 'cornflowerblue']
-)
-
-# --- Natural sinks as a line ---
-natural_sinks_annual_accc_mean.plot(ax=ax5[0], label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+    # --- Stackplot: positive values (emissions) ---
+    ax5[0].stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CO2 FFI gross'],
+        emissions_accc['CO2 AFOLU gross'],
+        labels=['Gross CO$_2$ FFI', 'Gross CO$_2$ AFOLU'],
+        colors=['dimgrey', 'indianred']
+    )
+    
+    # --- Stackplot: negative values (removals) ---
+    ax5[0].stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CDR land-based'],
+        emissions_accc['CDR novel'],
+        labels=['Land-based CDR', 'Novel CDR'],
+        colors=['peru', 'cornflowerblue']
+    )
+    
+    # --- Natural sinks as a line ---
+    natural_sinks_annual_accc_mean.plot(ax=ax5[0], label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+elif plot_type_natural_sinks=='area':
+    
+    # Split natural sinks into positive and negative
+    natural_sinks_positive = natural_sinks_annual_year.where(natural_sinks_annual_year > 0, 0)
+    natural_sinks_negative = natural_sinks_annual_year.where(natural_sinks_annual_year < 0, 0)
+    
+    # Calculate annual means and select only  
+    
+    
+    
+    # --- Stackplot: positive values (emissions) ---
+    ax5[0].stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CO2 FFI gross'],
+        emissions_accc['CO2 AFOLU gross'],
+        natural_sinks_positive,
+        labels=['Gross CO$_2$ FFI', 'Gross CO$_2$ AFOLU', 'Natural sinks'],
+        colors=['dimgrey', 'indianred','mediumseagreen']
+    )
+    
+    # --- Stackplot: negative values (removals) ---
+    ax5[0].stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CDR land-based'],
+        emissions_accc['CDR novel'],
+        natural_sinks_negative,
+        labels=['Land-based CDR', 'Novel CDR','Natural sinks'],
+        colors=['peru', 'cornflowerblue','mediumseagreen']
+    )
+    
 
 # --- Net CO₂ emissions line ---
 f_accc.emissions.sel(specie='CO2', config=1234).plot(
@@ -207,7 +317,21 @@ f_accc.emissions.sel(specie='CO2', config=1234).plot(
 # --- Formatting ---
 ax5[0].axhline(0, color='gray', linestyle='--', linewidth=1)
 ax5[0].set_xlim([2024.5, 2100])
-ax5[0].legend(loc='upper right', ncol=1)
+# ax5[0].legend(loc='upper right', ncol=1)
+
+#
+# --- Fix duplicate 'Natural sinks' in legend ---
+handles, labels = ax5[0].get_legend_handles_labels()
+
+# Keep only the first occurrence of each label
+seen = set()
+unique_handles_labels = [(h, l) for h, l in zip(handles, labels) if not (l in seen or seen.add(l))]
+
+# Unpack and apply legend
+unique_handles, unique_labels = zip(*unique_handles_labels)
+ax5[0].legend(unique_handles, unique_labels, loc='upper right', ncol=1)
+
+#
 ax5[0].set_ylabel('Gt CO$_2$ yr$^{-1}$')
 
 ax5[0].set_title('Emissions and sinks')
@@ -246,159 +370,96 @@ for ax in ax5:
 # --- Save figure ---
 fig5.savefig(fig_path / 'accc_scenario.png', dpi=150, bbox_inches='tight')
 
-# %%  Figure on annual emissions and sinks with stacked plots and natural sinks as a line
-# This version's natural sinks are prescribed and are not based on FaIR simulations is in other figures
-fig6, ax6 = pl.subplots(1, 3, figsize=(15,5), constrained_layout=True)
+# %%  Figure on annual emissions and sinks (single panel)
+plot_type_natural_sinks = 'area'  # Choose between 'area' and 'line'
 
+fig6, ax6 = pl.subplots(1, 1, figsize=(7, 5), constrained_layout=True)
 
-# --- Stackplot: positive values (emissions) ---
-ax6[0].stackplot(
-    emissions_accc['CO2 FFI gross'].timepoints,
-    emissions_accc['CO2 FFI gross'],
-    emissions_accc['CO2 AFOLU gross'],
-    labels=['Gross FFI CO$_2$', 'Gross AFOLU CO$_2$'],
-    colors=['dimgrey', 'indianred']
-)
+if plot_type_natural_sinks == 'line':
+    # --- Stackplot: positive values (emissions) ---
+    ax6.stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CO2 FFI gross'],
+        emissions_accc['CO2 AFOLU gross'],
+        labels=['CO$_2$ FFI gross', 'CO$_2$ AFOLU gross'],
+        colors=['dimgrey', 'indianred']
+    )
 
-# --- Stackplot: negative values (removals) ---
-ax6[0].stackplot(
-    emissions_accc['CO2 FFI gross'].timepoints,
-    emissions_accc['CDR land-based'],
-    emissions_accc['CDR novel'],
-    labels=['Land-based CDR', 'Novel CDR'],
-    colors=['peru', 'cornflowerblue']
-)
+    # --- Stackplot: negative values (removals) ---
+    ax6.stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CDR land-based'],
+        emissions_accc['CDR novel'],
+        labels=['Land-based CDR', 'Novel CDR'],
+        colors=['peru', 'cornflowerblue']
+    )
 
-# --- Natural sinks as a line ---
-natural_sinks_annual_accc_mean.plot(ax=ax6[0], label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+    # --- Natural sinks as a line ---
+    natural_sinks_annual_accc_mean.plot(ax=ax6, label='Natural sinks', color='tab:gray', linewidth=2, linestyle='--')
+
+elif plot_type_natural_sinks == 'area':
+    # Split natural sinks into positive and negative
+    natural_sinks_positive = natural_sinks_annual_year.where(natural_sinks_annual_year > 0, 0)
+    natural_sinks_negative = natural_sinks_annual_year.where(natural_sinks_annual_year < 0, 0)
+
+    # --- Stackplot: positive values (emissions) including positive natural sinks ---
+    ax6.stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CO2 FFI gross'],
+        emissions_accc['CO2 AFOLU gross'],
+        natural_sinks_positive,
+        labels=['CO$_2$ FFI gross', 'CO$_2$ AFOLU gross', 'Natural sinks'],
+        colors=['dimgrey', 'indianred', 'mediumseagreen']
+    )
+
+    # --- Stackplot: negative values (removals) including negative natural sinks ---
+    ax6.stackplot(
+        emissions_accc['CO2 FFI gross'].timepoints,
+        emissions_accc['CDR land-based'],
+        emissions_accc['CDR novel'],
+        natural_sinks_negative,
+        labels=['Anthropogenic land-based CDR', 'Anthropogenic tech.&ocean-based CDR', 'Natural sinks'],
+        colors=['peru', 'cornflowerblue', 'mediumseagreen']
+    )
 
 # --- Net CO₂ emissions line ---
 f_accc.emissions.sel(specie='CO2', config=1234).plot(
-    ax=ax6[0], label='Net CO$_2$ emissions', color='black', linewidth=2
+    ax=ax6, label='Net CO$_2$ emissions', color='black', linewidth=2
 )
 
 # --- Formatting ---
-ax6[0].axhline(0, color='gray', linestyle='--', linewidth=1)
-ax6[0].set_xlim([2024.5, 2100])
-ax6[0].legend(loc='upper right', ncol=1)
-ax6[0].set_ylabel('Gt CO$_2$ yr$^{-1}$')
+ax6.axhline(0, color='gray', linestyle='--', linewidth=1)
+ax6.set_xlim([2024.5, 2100])
 
-ax6[0].set_title('Emissions and sinks')
-ax6[0].set_title('a)', loc='left')
+# --- Fix duplicate 'Natural sinks' in legend ---
+handles, labels = ax6.get_legend_handles_labels()
+seen = set()
+unique_handles_labels = [(h, l) for h, l in zip(handles, labels) if not (l in seen or seen.add(l))]
+unique_handles, unique_labels = zip(*unique_handles_labels)
+ax6.legend(unique_handles, unique_labels, loc='upper right', ncol=1)
 
-co2_accc_median.plot(ax=ax6[1], label='Median', color='cornflowerblue', linewidth=2)
-ax6[1].fill_between(co2_accc_mean.timebounds,co2_accc_95ci_low,co2_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
-ax6[1].fill_between(co2_accc_mean.timebounds,co2_accc_66ci_low,co2_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
-
-ax6[1].legend(loc='upper right')
-ax6[1].set_title('CO$_2$ concentration')
-ax6[1].set_title('b)', loc='left')
-ax6[1].set_ylabel('ppm')
-ax6[1].set_xlim([2020,2100])
-ax6[1].set_ylim([350,450])
-ax6[1].set_yticks(np.arange(350, 451, 25))
+#ax6.set_ylabel('Gt CO$_2$ yr$^{-1}$')
+ax6.set_title('Global CO$_2$ emissions, natural carbon sinks and\nanthropogenic carbon removals to achive 350 ppm level, Gt',color='gray' )
 
 
-sat_accc_median.plot(ax=ax6[2], label='Median', color='cornflowerblue', linewidth=2)
-ax6[2].fill_between(sat_accc_mean.timebounds,sat_accc_95ci_low,sat_accc_95ci_high, alpha=alpha_95, label='95% credible interval',color='cornflowerblue')
-ax6[2].fill_between(sat_accc_mean.timebounds,sat_accc_66ci_low,sat_accc_66ci_high, alpha=alpha_66, label='66% credible interval', color='cornflowerblue')
-
-ax6[2].legend(loc='upper right')
-ax6[2].set_title('Surface air temperature\nincrease from 1850-1900')
-ax6[2].set_title('c)', loc='left')
-ax6[2].set_ylabel('°C')
-ax6[2].set_xlim([2020,2100])
-ax6[2].set_ylim([0.75, 2.5])
-ax6[2].set_yticks(np.arange(0.75, 2.26, 0.25))
 
 
-for ax in ax6:
-    ax.grid(which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.4)
-    ax.set_xlabel('')
+
+ax6.grid(axis='y',which='both', linestyle='-', linewidth=0.5, color='gray', alpha=0.4)
+ax6.set_xlabel('')
+
 
 # --- Save figure ---
-fig6.savefig(fig_path / 'accc_scenario_prescribed_natural_sinks.png', dpi=150, bbox_inches='tight')
+fig6.savefig(fig_path / 'accc_scenario_single_panel.png', dpi=150, bbox_inches='tight')
+
 
 # %%  Figure natural sinks in the SSPs
-fig7, ax7 = pl.subplots(1, 1, figsize=(5,5), constrained_layout=True)
-for ssp in natural_sinks_annual_ssps.scenario.values:
-    natural_sinks_annual_ssps.sel(scenario=ssp).mean(dim='config').plot(ax=ax7,label=ssp)
-ax7.legend()
+if include_ssps:
+    fig7, ax7 = pl.subplots(1, 1, figsize=(5,5), constrained_layout=True)
+    for ssp in natural_sinks_annual_ssps.scenario.values:
+        natural_sinks_annual_ssps.sel(scenario=ssp).mean(dim='config').plot(ax=ax7,label=ssp)
+    ax7.legend()
 
 
-# %%  Save data into Excel files
-
-# Assuming `temp_data` is your DataArray from the previous operation
-sat_accc_data = f_accc.temperature.sel(layer=0, scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
-
-# Calculate the mean of neighboring time points
-sat_annual_mean = (sat_accc_data[:-1,:].values + sat_accc_data[1:,:].values) / 2
-
-# Assign new timebounds to the result
-sat_accc = xr.DataArray(sat_annual_mean, coords={'year': np.arange(2024,2101), 'config':sat_accc_data.config}, dims=['year', 'config'])
-    
-
-# Assuming `temp_data` is your DataArray from the previous operation
-co2_accc_data = f_accc.concentration.sel(specie='CO2', scenario='accc').loc[dict(timebounds=slice(2024, 2101))]
-
-# Calculate the mean of neighboring time points
-co2_annual_mean = (co2_accc_data[:-1,:].values + co2_accc_data[1:,:].values) / 2
-
-# Assign new timebounds to the result
-co2_accc = xr.DataArray(co2_annual_mean, coords={'year': np.arange(2024,2101), 'config':co2_accc_data.config}, dims=['year', 'config'])
-
-# Process natural sinks
-natural_sinks_annual_data_mean=(natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2024, 2100))].values
-                                +natural_sinks_annual_accc_mean.loc[dict(timebounds=slice(2025, 2101))].values) / 2
-# Assign new timebounds to the result
-natural_sinks_annual_year=xr.DataArray(natural_sinks_annual_data_mean, coords={'year': np.arange(2024,2101)}, dims=['year'])
-natural_sinks_annual_year.name='Natural sinks'
-
-# Process data into Pandas Dataframe
-output_data=pd.DataFrame(index=np.arange(2024,2101))
-# Name the index as 'year'
-output_data.index.name = 'year'
-
-for specie, data in emissions_accc.items():
-    # Select the relevant slice
-    if 'timepoints' in data.coords:
-        sliced_data = data.loc[dict(timepoints=slice(2024, 2101))]
-        
-        # If the data has a 'config' dimension, select the first config (index 0)
-        if 'config' in sliced_data.dims:
-            sliced_data = sliced_data.sel(config=1234)
-        
-        # Add the result to the DataFrame
-        output_data[specie] = sliced_data.values
-    
-output_data['Natural sinks'] = natural_sinks_annual_year.to_pandas()
-
-output_data['sat median']=sat_accc.median(dim='config')
-output_data['sat 95%_CI_low']=sat_accc.quantile(0.025, dim='config')
-output_data['sat 95%_CI_high']=sat_accc.quantile(0.975, dim='config')
-
-output_data['CO2 median']=co2_accc.median(dim='config')
-output_data['CO2 95%_CI_low']=co2_accc.quantile(0.025, dim='config')
-output_data['CO2 95%_CI_high']=co2_accc.quantile(0.975, dim='config')
-
-excel_filename = output_data_path / 'accc_roadmap.xlsx'
-
-# Create an Excel writer using the context manager
-with pd.ExcelWriter(excel_filename) as writer:
-
-    cols = list(emissions_accc.keys()) + ['Natural sinks']
-    output_data[cols].to_excel(writer, sheet_name='Emissions and sinks', index=True)
-
-    # Save temperature-related data in a single sheet
-    temperature_data = output_data[['sat median', 'sat 95%_CI_low', 'sat 95%_CI_high']]
-    temperature_data.to_excel(writer, sheet_name='Temperature', index=True)
-
-    # Save CO2 concentration-related data in a single sheet
-    co2_data = output_data[['CO2 median', 'CO2 95%_CI_low', 'CO2 95%_CI_high']]
-    co2_data.to_excel(writer, sheet_name='CO2 concentration', index=True)
-
-
-# Print important scenario metrics
-print('Median CO2 concentration in 2100 = ', output_data['CO2 median'].loc[2100].round(2))
 
 

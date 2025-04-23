@@ -82,9 +82,15 @@ def create_scenario():
     emi_2024={'CO2 FFI': 37.4,
               'CO2 AFOLU': 4.2-cdr_2024 }
     
-    # Set parameters
+    # Set parameters for the reductuins of grpss emission so that year-2030 net
+    # CO2 emissions are 43% below year-2019 emissions (based on the 43%
+    # reduction of GHG emissions in the C1 category of IPCC AR6 WG3 scenarios)
+    # Net CO2 emissions in 2019 were 40.58 GtCO2yr-1 according to GCP
+    # (https://www.icos-cp.eu/science-and-impact/global-carbon-budget/2024).
+    # A 43% reduction from this results in 23.13 GtCO2yr-1 net emissions in 2030.
+    # The parameters were optimized with trial and error.
     start_year = 2024.5
-    annual_decrease_rate = {'CO2 FFI': 0.09,'CO2 AFOLU': 0.055} 
+    annual_decrease_rate = {'CO2 FFI': 0.0979,'CO2 AFOLU': 0.0571} 
     gross_emi_target = {'CO2 FFI': 1.5,'CO2 AFOLU': 1.} 
     cdr_years = f_accc.emissions.timepoints.loc[start_year:2101]  # Use consistent timepoints from f_accc
     nyears = len(cdr_years)  # Number of years for ACCC scenario
